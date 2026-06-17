@@ -2,6 +2,8 @@
 
 import subprocess
 import os
+import json
+import re
 import shlex
 import shutil
 import time
@@ -10,6 +12,38 @@ from typing import Optional
 from utilities.console_helper import console
 from utilities import console_helper
 from models import AgentConfig
+
+
+# Match the secret env values inside the MCP config JSON, by key.
+_SECRET_KEY_RE = re.compile(
+    r'("(?:PERSONAL_ACCESS_TOKEN|ADO_MCP_AUTH_TOKEN|GITHUB_PAT)":\s*")[^"]*"'
+)
+
+
+def _collect_secret_values(mcp_config: str) -> list[str]:
+    """Pull the literal secret values out of the MCP config so we can mask
+    them anywhere they appear (command line, agent stdout/stderr)."""
+    values: list[str] = []
+    try:
+        cfg = json.loads(mcp_config)
+        for server in cfg.get("mcpServers", {}).values():
+            for value in (server.get("env") or {}).values():
+                if value:
+                    values.append(str(value))
+    except (ValueError, AttributeError):
+        pass
+    return values
+
+
+def _redact_secrets(text: str, secret_values: Optional[list[str]] = None) -> str:
+    """Mask secrets before anything is printed to the console or CI logs."""
+    if not text:
+        return text
+    redacted = _SECRET_KEY_RE.sub(r'\1***"', text)
+    for value in secret_values or []:
+        if value:
+            redacted = redacted.replace(value, "***")
+    return redacted
 
 
 class CopilotAgentService:
@@ -98,9 +132,13 @@ class CopilotAgentService:
             if agent and agent.name:
                 cmd.extend(["--agent", agent.name])
 
-            # Debug: Print command as runnable one-liner
+            # Secrets to mask from every output channel below (cmd line + agent
+            # stdout/stderr) so the PAT never leaks to the console or CI logs.
+            secret_values = _collect_secret_values(mcp_config)
+
+            # Debug: Print command as a runnable one-liner, with secrets redacted.
             cmd_str = ' '.join(shlex.quote(str(arg)) for arg in cmd)
-            console_helper.show_info(f"Running: {cmd_str}")
+            console_helper.show_info(f"Running: {_redact_secrets(cmd_str, secret_values)}")
 
             env = os.environ.copy()
             env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -153,10 +191,10 @@ class CopilotAgentService:
             stderr_text = "".join(error_lines)
 
             if proc.returncode == 0:
-                console_helper.show_success(f"Agent completed: {stdout_text}")
+                console_helper.show_success(f"Agent completed: {_redact_secrets(stdout_text, secret_values)}")
                 return True, stdout_text
             else:
-                console_helper.show_error(f"Agent failed: {stderr_text}")
+                console_helper.show_error(f"Agent failed: {_redact_secrets(stderr_text, secret_values)}")
                 return False, stderr_text
         
         except subprocess.TimeoutExpired:
