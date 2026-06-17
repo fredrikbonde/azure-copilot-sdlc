@@ -3,6 +3,7 @@
 import subprocess
 import os
 import shlex
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -27,15 +28,25 @@ class CopilotAgentService:
     
     def _check_copilot_available(self) -> bool:
         """Check if copilot CLI is available"""
+        # Fast PATH lookup first (matches the npx check). This avoids the
+        # intermittent false negative where a cold-start `copilot --version`
+        # (node/auth warmup) takes longer than the timeout and gets wrongly
+        # reported as "not installed".
+        if shutil.which("copilot"):
+            return True
+
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["copilot", "--version"],
                 capture_output=True,
-                check=True,
-                timeout=5
+                timeout=30
             )
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            # The binary launched but was slow to respond; it clearly exists,
+            # so treat it as available rather than missing.
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        except FileNotFoundError:
             return False
     
     def execute_agent(

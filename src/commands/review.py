@@ -49,6 +49,22 @@ Summary:
 - List of recommendations for improvement
 - Test coverage assessment
 
+Publish the review to the pull request:
+1. Locate the active pull request whose source branch is "refs/heads/{branch_name}"
+   in project "{project}" using the Azure DevOps MCP tool
+   `repo_list_pull_requests_by_repo_or_project` (pass project="{project}",
+   sourceRefName="refs/heads/{branch_name}", status="Active").
+2. From the returned pull request, read its `pullRequestId` and `repositoryId`.
+3. Post the COMPLETE review (the full Markdown report above, not a summary) as a new
+   comment thread on that pull request using `repo_create_pull_request_thread` with:
+   - repositoryId = the pull request's repositoryId
+   - pullRequestId = the pull request's pullRequestId
+   - project = "{project}"
+   - content = the full review in valid Markdown
+   - status = "Active"
+4. Prefix the comment with "# COPILOT REVIEW" and add "Generated on {timestamp} UTC".
+5. Confirm the comment was created; if posting fails, report the error clearly.
+
 Be thorough and provide constructive feedback. Focus on high-impact issues.
 Generated on {timestamp} UTC
 """
@@ -66,8 +82,10 @@ def review(
     1. Find feature branch
     2. Retrieve work item and plan
     3. Execute reviewer agent
-    4. Apply fixes for issues found
-    5. Update PR and work item
+    4. Post the review as a comment on the pull request
+
+    Note: this command is advisory. It does not modify code, merge the PR, or
+    change the work item state.
     """
     try:
         # Validate inputs

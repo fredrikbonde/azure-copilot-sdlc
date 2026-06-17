@@ -37,8 +37,12 @@ class GitService:
         status = self.get_status()
         return bool(status)
     
-    def create_branch(self, branch_name: str, from_branch: str = "main") -> bool:
+    def create_branch(self, branch_name: str, from_branch: Optional[str] = None) -> bool:
         """Create and checkout new branch"""
+        # Default to the repo's actual default branch (main/master) rather than
+        # assuming "main", which breaks on master-based repos.
+        if from_branch is None:
+            from_branch = self.get_default_branch()
         # Fetch latest
         success, _ = self._run_git("fetch", "origin")
         if not success:
@@ -71,8 +75,13 @@ class GitService:
             return False
         
         for line in output.split("\n"):
+            line = line.strip()
+            # Drop the current-branch ("* ") / worktree ("+ ") marker so the
+            # branch you're currently on is still detected.
+            if line[:2] in ("* ", "+ "):
+                line = line[2:]
             # Strip remotes/origin prefix and whitespace
-            line = line.strip().replace("remotes/origin/", "")
+            line = line.replace("remotes/origin/", "").strip()
             if line == branch_name:
                 return True
         return False

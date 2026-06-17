@@ -1,5 +1,6 @@
 """MCP configuration service"""
 
+import base64
 import json
 import os
 import subprocess
@@ -70,7 +71,13 @@ class McpConfigurationService:
         pat = validators.validate_environment_variable(
             "ADO_MCP_AUTH_TOKEN",
             "Azure DevOps PAT not found. Please enter your PAT:"
-        )
+        ).strip()
+
+        # The @azure-devops/mcp server's "pat" auth mode reads PERSONAL_ACCESS_TOKEN,
+        # which must be base64("<username>:<pat>"). The server strips the username
+        # segment and uses the rest as the raw PAT (sent as HTTP Basic auth). The
+        # username is discarded, so an empty one is fine.
+        pat_token = base64.b64encode(f":{pat}".encode("utf-8")).decode("ascii")
         
         # Get organization - check .env file first
         try:
@@ -113,10 +120,10 @@ class McpConfigurationService:
                         "@azure-devops/mcp",
                         org,
                         "--authentication",
-                        "envvar"
+                        "pat"
                     ],
                     "env": {
-                        "ADO_MCP_AUTH_TOKEN": pat
+                        "PERSONAL_ACCESS_TOKEN": pat_token
                     }
                 }
             }
